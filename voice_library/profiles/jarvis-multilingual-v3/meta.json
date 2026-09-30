@@ -1,0 +1,8 @@
+{
+  "profile_id": "jarvis-multilingual-v3",
+  "name": "jarvis-multilingual-v3",
+  "ref_audio_filename": "jarvis.wav",
+  "ref_text": "",
+  "x_vector_only_mode": true,
+  "language": "Auto"
+}

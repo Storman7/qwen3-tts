@@ -344,6 +344,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
                 ref_text=ref_text,
                 language=language,
                 x_vector_only_mode=x_vector_only_mode,
+                max_new_tokens=512,
             )
 
             audio = wavs[0]
@@ -494,6 +495,7 @@ class OfficialQwen3TTSBackend(TTSBackend):
                 text=text,
                 language=language,
                 voice_clone_prompt=prompt_items,
+                max_new_tokens=512,
             )
 
             audio = wavs[0]
