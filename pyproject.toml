@@ -62,7 +62,7 @@ qwen-tts-voice-studio = "gradio_voice_studio:main"
 
 [tool.setuptools]
 packages = { find = { where = ["."] , include = ["qwen_tts*", "api*"] } }
-py-modules = ["gradio_voice_studio"]
+py-modules = ["gradio_voice_studio", "openjarvis_characters"]
 include-package-data = true
 
 [tool.setuptools.package-data]

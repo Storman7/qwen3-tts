@@ -31,6 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import gradio as gr
 import httpx
 
+from openjarvis_characters import character_metadata, register_character
+
 
 # -----------------------------------------------------------------------------
 # Configuration and Defaults
@@ -130,6 +132,8 @@ def named_profile_id(name: str) -> str:
     if not profile_id:
         raise gr.Error("Profile name must contain letters or numbers.")
 
+    if len(profile_id) > 80:
+        raise gr.Error("Profile identifier must be at most 80 characters.")
     return profile_id
 
 
@@ -397,6 +401,38 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
         with gr.Row():
             global_log = gr.Markdown("", elem_classes=["small"])
 
+        with gr.Accordion("Character Personality — initial setup", open=True):
+            gr.Markdown(
+                "Enter explicit character metadata before saving a new voice. "
+                "Saving prepares one researched draft in OpenJarvis; review and "
+                "approval happen in Device Manager → Voice Routing. Voice names "
+                "do not establish identity. Conversations reuse approved local traits."
+            )
+            with gr.Row():
+                character_display = gr.Textbox(label="Character display name")
+                character_kind = gr.Dropdown(
+                    label="Character type", value="movie_tv",
+                    choices=[("Movie or television character", "movie_tv"),
+                             ("Literary character", "literary"),
+                             ("Historical person", "historical"),
+                             ("Custom personality", "custom")],
+                )
+            with gr.Row():
+                character_name = gr.Textbox(label="Character or person name")
+                character_source = gr.Textbox(label="Source or custom personality research brief")
+                character_era = gr.Textbox(label="Release year, version, or historical era")
+            character_notes = gr.Textbox(label="Version notes (optional)", lines=2)
+            with gr.Row():
+                character_conversations = gr.Checkbox(label="Apply personality to conversations", value=True)
+                character_announcements = gr.Checkbox(label="Allow voice-only announcements", value=False)
+            character_key = gr.Textbox(
+                label="OpenJarvis administrator API key", type="password", value="",
+            )
+            gr.Markdown("The API key is used for this request only and is never saved in voice metadata. If research fails, the saved voice remains available neutrally.")
+        character_inputs = [character_display, character_kind, character_name,
+                            character_source, character_era, character_notes,
+                            character_conversations, character_announcements, character_key]
+
         # Tabs for create, library, and playground
         with gr.Tabs():
             # Create tab and nested subtabs
@@ -592,7 +628,11 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
             out_path = write_bytes_to_temp_audio(audio_bytes, ext)
             return out_path, out_path, "✅ Generated audio."
 
-        def on_save_preset(library_dir_str: str, name: str, voice: str, language: str, instructions: str):
+        def on_save_preset(library_dir_str: str, name: str, voice: str, language: str, instructions: str, *character_fields):
+            try:
+                identity, administrator_key = character_metadata(character_fields)
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
             if not name.strip():
                 raise gr.Error("Profile name is required.")
             pid = require_new_profile_id(
@@ -610,7 +650,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 instructions=instructions or "",
             )
             save_profile(Path(library_dir_str), vp)
-            return f"✅ Saved preset profile: {vp.profile_id}"
+            return f"✅ Saved preset profile: {vp.profile_id}\n\n" + register_character(vp.profile_id, identity, administrator_key)
 
         def on_generate_design_ref(base_url: str, timeout_s: float, language: str, instructions: str, ref_line: str):
             if not instructions.strip():
@@ -634,7 +674,12 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
             instructions: str,
             ref_line: str,
             ref_audio_path: str,
+            *character_fields,
         ):
+            try:
+                identity, administrator_key = character_metadata(character_fields)
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
             if not name.strip():
                 raise gr.Error("Profile name is required.")
             if not ref_audio_path or not Path(ref_audio_path).exists():
@@ -662,7 +707,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 ref_audio_filename=ref_filename,
             )
             save_profile(Path(library_dir_str), vp)
-            return f"✅ Saved designed voice as reusable clone profile: {pid}"
+            return f"✅ Saved designed voice as reusable clone profile: {pid}\n\n" + register_character(pid, identity, administrator_key)
 
         def on_generate_clone(
             base_url: str,
@@ -699,7 +744,12 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
             ref_audio_path: str,
             ref_text: str,
             xvec_only: bool,
+            *character_fields,
         ):
+            try:
+                identity, administrator_key = character_metadata(character_fields)
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
             if not name.strip():
                 raise gr.Error("Profile name is required.")
             if not ref_audio_path or not Path(ref_audio_path).exists():
@@ -729,7 +779,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 ref_audio_filename=ref_filename,
             )
             save_profile(Path(library_dir_str), vp)
-            return f"✅ Saved clone profile: {pid}"
+            return f"✅ Saved clone profile: {pid}\n\n" + register_character(pid, identity, administrator_key)
 
         def on_library_refresh(library_dir_str: str):
             profiles = list_profiles(Path(library_dir_str))
@@ -832,7 +882,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
         )
         preset_save_btn.click(
             fn=on_save_preset,
-            inputs=[library_dir_in, preset_name, preset_voice, preset_language, preset_instructions],
+            inputs=[library_dir_in, preset_name, preset_voice, preset_language, preset_instructions] + character_inputs,
             outputs=[global_log],
         )
 
@@ -843,7 +893,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
         )
         design_save_as_clone_btn.click(
             fn=on_save_design_as_clone,
-            inputs=[library_dir_in, design_name, design_language, design_instructions, design_ref_line, design_audio],
+            inputs=[library_dir_in, design_name, design_language, design_instructions, design_ref_line, design_audio] + character_inputs,
             outputs=[global_log],
         )
 
@@ -854,7 +904,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
         )
         clone_save_btn.click(
             fn=on_save_clone_profile,
-            inputs=[library_dir_in, clone_name, clone_language, clone_ref_audio, clone_ref_text, clone_xvec_only],
+            inputs=[library_dir_in, clone_name, clone_language, clone_ref_audio, clone_ref_text, clone_xvec_only] + character_inputs,
             outputs=[global_log],
         )
 
