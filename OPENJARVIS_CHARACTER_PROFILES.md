@@ -49,6 +49,16 @@ acceptance test uses one Atlas profile and the real OpenJarvis routes and storag
 with research/model calls mocked. They do not download model weights or contact
 production.
 
+A real UI smoke test is also available:
+
+```bash
+python character_integration_tests/gradio_smoke.py
+```
+
+Run it with the studio's Gradio interpreter. It checks real UI construction,
+the creation callback, mounting at `/voice-studio`, and page/config responses
+without loading a model or contacting OpenJarvis. It passes with Gradio 6.17.3.
+
 Before production rollout, verify the deployed Gradio version and the actual
 UI, existing OpenJarvis API authentication, SearXNG, Qwen and Home Assistant
 connections. Check one newly created profile through review, approval, voice
