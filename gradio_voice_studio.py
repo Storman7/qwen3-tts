@@ -119,6 +119,34 @@ def safe_profile_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+def named_profile_id(name: str) -> str:
+    """Create a filesystem-safe profile ID from a friendly profile name."""
+    import re
+
+    profile_id = name.strip().lower()
+    profile_id = re.sub(r"[^a-z0-9]+", "-", profile_id)
+    profile_id = profile_id.strip("-")
+
+    if not profile_id:
+        raise gr.Error("Profile name must contain letters or numbers.")
+
+    return profile_id
+
+
+def require_new_profile_id(library_dir: Path, name: str) -> str:
+    """Return a friendly profile ID and prevent accidental duplicates."""
+    profile_id = named_profile_id(name)
+    destination = profile_dir(library_dir, profile_id)
+
+    if destination.exists():
+        raise gr.Error(
+            f"Profile '{name.strip()}' already exists as "
+            f"'{profile_id}'. Delete or rename the existing profile first."
+        )
+
+    return profile_id
+
+
 def profile_dir(library_dir: Path, profile_id: str) -> Path:
     """Return the path to a given profile's directory."""
     return ensure_dirs(library_dir)["profiles"] / profile_id
@@ -211,7 +239,8 @@ def write_bytes_to_temp_audio(content: bytes, ext: str) -> str:
 
 def request_tts(base_url: str, payload: Dict[str, Any], timeout_s: float) -> Tuple[bytes, str]:
     """Call the /v1/audio/speech endpoint and return audio bytes and extension."""
-    url = normalize_base_url(base_url) + "/v1/audio/speech"
+    endpoint = "/v1/audio/voice-clone" if payload.get("ref_audio") else "/v1/audio/speech"
+    url = normalize_base_url(base_url) + endpoint
     response_format = payload.get("response_format") or "wav"
     payload["response_format"] = response_format
     with httpx.Client(timeout=timeout_s) as client:
@@ -492,7 +521,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                                     lines=3,
                                 )
                                 clone_generate_btn = gr.Button("Generate", variant="primary")
-                                clone_save_btn = gr.Button("Save clone profile", variant="secondary")
+                                clone_save_btn = gr.Button("Save clone profile", variant="primary")
                             with gr.Column(scale=1, min_width=320):
                                 clone_audio = gr.Audio(label="Output audio", type="filepath")
                                 clone_download = gr.File(label="Download audio")
@@ -566,8 +595,12 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
         def on_save_preset(library_dir_str: str, name: str, voice: str, language: str, instructions: str):
             if not name.strip():
                 raise gr.Error("Profile name is required.")
+            pid = require_new_profile_id(
+                Path(library_dir_str),
+                name,
+            )
             vp = VoiceProfile(
-                profile_id=safe_profile_id(),
+                profile_id=pid,
                 name=name.strip(),
                 task_type="CustomVoice",
                 origin="Preset(CustomVoice)",
@@ -606,11 +639,14 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 raise gr.Error("Profile name is required.")
             if not ref_audio_path or not Path(ref_audio_path).exists():
                 raise gr.Error("Generate a reference clip first.")
-            pid = safe_profile_id()
+            pid = require_new_profile_id(
+                Path(library_dir_str),
+                name,
+            )
             dest_dir = profile_dir(Path(library_dir_str), pid)
             dest_dir.mkdir(parents=True, exist_ok=True)
-            ref_ext = Path(ref_audio_path).suffix or ".wav"
-            ref_filename = f"ref_audio{ref_ext}"
+            ref_ext = Path(ref_audio_path).suffix.lower() or ".wav"
+            ref_filename = f"{pid}{ref_ext}"
             shutil.copy2(ref_audio_path, dest_dir / ref_filename)
             vp = VoiceProfile(
                 profile_id=pid,
@@ -641,7 +677,7 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 raise gr.Error("Reference audio is required.")
             if (not xvec_only) and (not ref_text.strip()):
                 raise gr.Error("Reference transcript is required unless x_vector_only_mode is enabled.")
-            ref_uri = data_uri_from_file(Path(ref_audio_path))
+            ref_uri = base64.b64encode(Path(ref_audio_path).read_bytes()).decode("utf-8")
             payload = {
                 "input": text,
                 "voice": "Vivian",
@@ -670,11 +706,14 @@ def build_app(initial_base_url: str, initial_library_dir: Path) -> gr.Blocks:
                 raise gr.Error("Reference audio is required.")
             if (not xvec_only) and (not ref_text.strip()):
                 raise gr.Error("Reference transcript is required unless x_vector_only_mode is enabled.")
-            pid = safe_profile_id()
+            pid = require_new_profile_id(
+                Path(library_dir_str),
+                name,
+            )
             dest_dir = profile_dir(Path(library_dir_str), pid)
             dest_dir.mkdir(parents=True, exist_ok=True)
-            ref_ext = Path(ref_audio_path).suffix or ".wav"
-            ref_filename = f"ref_audio{ref_ext}"
+            ref_ext = Path(ref_audio_path).suffix.lower() or ".wav"
+            ref_filename = f"{pid}{ref_ext}"
             shutil.copy2(ref_audio_path, dest_dir / ref_filename)
             vp = VoiceProfile(
                 profile_id=pid,
